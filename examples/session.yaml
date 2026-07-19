@@ -1,0 +1,23 @@
+# Example AgentOS session spec.
+# Run with:  agentd run -spec examples/session.yaml -secrets examples/secrets.yaml
+name: demo
+runtime:
+  # Any agent harness works here — Claude Code headless, OpenClaw, or a plain
+  # shell for kicking the tires.
+  command: ["bash", "-lc", "cat $AGENTOS_MANIFEST && curl -s $AGENTOS_GATEWAY/egress/api.github.com/zen && echo"]
+workspace: ./workspace
+budgets:
+  wall_clock_seconds: 300
+  max_egress_requests: 50
+egress:
+  - host: api.github.com
+    secret: github-token
+    inject:
+      header: Authorization
+      format: "Bearer {secret}"
+  # Hosts can be granted without a credential too:
+  - host: api.anthropic.com
+    secret: anthropic-key
+    inject:
+      header: x-api-key
+      format: "{secret}"

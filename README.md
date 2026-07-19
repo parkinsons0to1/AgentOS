@@ -40,4 +40,23 @@ AgentOS inverts the assumption. The agent is the first-class user. Its "display"
 
 ## Status
 
-Architecture phase. No code yet — the design documents in this repo are the current deliverable.
+**v0.1 in progress.** `agentd` (session supervisor), the `capd` egress gateway/secrets broker, the JSONL ledger, and the session manifest contract are implemented and tested in Go. See [`ROADMAP.md`](./ROADMAP.md) for what's done and what's next.
+
+## Quick start
+
+```bash
+go build -o agentd ./cmd/agentd
+
+cp examples/secrets.yaml.example secrets.yaml   # fill in real values
+chmod 600 secrets.yaml
+
+./agentd run -spec examples/session.yaml -secrets secrets.yaml
+```
+
+Inside the session the agent finds:
+
+- `$AGENTOS_MANIFEST` — a markdown contract listing its grants and budgets
+- `$AGENTOS_GATEWAY` — the egress gateway; `curl $AGENTOS_GATEWAY/egress/api.github.com/zen` reaches GitHub **with credentials injected by the broker** — the key never enters the session
+- a ledger at `~/.agentos/sessions/<id>/ledger.jsonl` recording everything
+
+Run the tests with `go test ./...`.
