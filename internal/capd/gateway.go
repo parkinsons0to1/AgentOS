@@ -42,6 +42,12 @@ type Gateway struct {
 	toolCalls atomic.Int64
 	server    *http.Server
 	addr      string
+
+	// EscalationDir, when set (by session.Run, to the session state dir),
+	// enables the capability-escalation flow: sessions may request egress to
+	// ungranted hosts and the viewport decides. Approved escalations grant
+	// egress only — credential injection always requires the spec.
+	EscalationDir string
 }
 
 // NewGateway wires a gateway for one session. bus may be nil when the session
@@ -69,6 +75,7 @@ func (g *Gateway) Start() (string, error) {
 	mux.HandleFunc("/status", g.handleStatus)
 	mux.HandleFunc("/tool", g.handleToolIndex)
 	mux.HandleFunc("/tool/", g.handleTool)
+	mux.HandleFunc("/escalate", g.handleEscalate)
 	g.server = &http.Server{Handler: proxyOrMux{g: g, mux: mux}}
 	go g.server.Serve(ln)
 	return g.addr, nil
@@ -112,6 +119,64 @@ func (g *Gateway) handleStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// grantFor resolves a host to a grant: the session spec first, then approved
+// escalations (egress-only, no credential).
+func (g *Gateway) grantFor(host string) *spec.Grant {
+	if grant := g.sess.GrantFor(host); grant != nil {
+		return grant
+	}
+	if g.EscalationDir == "" {
+		return nil
+	}
+	e, err := LoadEscalation(g.EscalationDir, host)
+	if err == nil && e.Status == EscalationApproved {
+		return &spec.Grant{Host: host}
+	}
+	return nil
+}
+
+// handleEscalate lets the session request egress to an ungranted host:
+// POST /escalate {"host": "...", "reason": "..."}. The reply carries the
+// current status so agents can poll after asking.
+func (g *Gateway) handleEscalate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "POST only"})
+		return
+	}
+	if g.EscalationDir == "" {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "escalation not enabled for this session"})
+		return
+	}
+	var req struct {
+		Host   string `json:"host"`
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil ||
+		req.Host == "" || strings.ContainsAny(req.Host, "/\\ ") {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "body must be {\"host\": \"bare.hostname\", \"reason\": \"...\"}"})
+		return
+	}
+	if g.sess.GrantFor(req.Host) != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"host": req.Host, "status": "granted"})
+		return
+	}
+	if e, err := LoadEscalation(g.EscalationDir, req.Host); err == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"host": e.Host, "status": e.Status})
+		return
+	}
+	e := &Escalation{Host: req.Host, Reason: req.Reason,
+		Status: EscalationPending, RequestedAt: time.Now().UTC()}
+	if err := SaveEscalation(g.EscalationDir, e); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	g.ledger.Emit("capability.requested", map[string]any{
+		"host": req.Host, "reason": req.Reason,
+	})
+	writeJSON(w, http.StatusAccepted, map[string]any{"host": req.Host, "status": e.Status,
+		"hint": "a human decides in the viewport; poll this endpoint or retry the request"})
+}
+
 // spendEgress consumes one unit of the egress budget. It returns false (and
 // ledgers the violation) when the budget is exhausted.
 func (g *Gateway) spendEgress(host string) bool {
@@ -136,7 +201,7 @@ func (g *Gateway) handleEgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	grant := g.sess.GrantFor(host)
+	grant := g.grantFor(host)
 	if grant == nil {
 		g.deny(w, r, host, http.StatusForbidden,
 			fmt.Sprintf("egress to %q is not granted to this session", host))
@@ -169,7 +234,7 @@ func (g *Gateway) handleEgress(w http.ResponseWriter, r *http.Request) {
 // including credential injection.
 func (g *Gateway) handleAbsoluteProxy(w http.ResponseWriter, r *http.Request) {
 	host := r.URL.Hostname()
-	grant := g.sess.GrantFor(host)
+	grant := g.grantFor(host)
 	if grant == nil {
 		g.deny(w, r, host, http.StatusForbidden,
 			fmt.Sprintf("egress to %q is not granted to this session", host))
@@ -200,7 +265,7 @@ func (g *Gateway) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		host = r.Host
 	}
-	if g.sess.GrantFor(host) == nil {
+	if g.grantFor(host) == nil {
 		g.deny(w, r, host, http.StatusForbidden,
 			fmt.Sprintf("egress to %q is not granted to this session", host))
 		return

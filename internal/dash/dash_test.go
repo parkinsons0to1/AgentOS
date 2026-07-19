@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parkinsons0to1/AgentOS/internal/capd"
 	"github.com/parkinsons0to1/AgentOS/internal/ledger"
 	"github.com/parkinsons0to1/AgentOS/internal/session"
 )
@@ -163,6 +164,73 @@ func TestKillRejectsTraversalAndFinished(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
 		t.Fatal("path traversal must not reach a kill")
+	}
+}
+
+func TestEscalationApprovalFlow(t *testing.T) {
+	root := t.TempDir()
+	writeSession(t, root, "s1", session.Meta{ID: "s1", PID: os.Getpid(),
+		StartedAt: time.Now()}, []string{"session.start"})
+	// The gateway would have written this pending request.
+	err := capd.SaveEscalation(filepath.Join(root, "s1"), &capd.Escalation{
+		Host: "api.locked.example", Reason: "need it",
+		Status: capd.EscalationPending, RequestedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(Handler(root))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/sessions/s1/escalations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Escalations []capd.Escalation `json:"escalations"`
+	}
+	json.NewDecoder(resp.Body).Decode(&list)
+	resp.Body.Close()
+	if len(list.Escalations) != 1 || list.Escalations[0].Status != "pending" {
+		t.Fatalf("escalations = %+v", list.Escalations)
+	}
+
+	resp, err = http.Post(srv.URL+"/api/sessions/s1/escalations/api.locked.example",
+		"application/json", strings.NewReader(`{"approve":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("decide: status=%d, want 200", resp.StatusCode)
+	}
+
+	e, err := capd.LoadEscalation(filepath.Join(root, "s1"), "api.locked.example")
+	if err != nil || e.Status != capd.EscalationApproved {
+		t.Fatalf("after approve: %+v, %v", e, err)
+	}
+	// The human decision landed in the audit trail.
+	events, err := ledger.Read(filepath.Join(root, "s1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, ev := range events {
+		if ev.Type == "capability.approved" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("approval was not ledgered")
+	}
+
+	// Deciding again conflicts.
+	resp, _ = http.Post(srv.URL+"/api/sessions/s1/escalations/api.locked.example",
+		"application/json", strings.NewReader(`{"approve":false}`))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("double decide: status=%d, want 409", resp.StatusCode)
 	}
 }
 

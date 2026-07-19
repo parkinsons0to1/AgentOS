@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/parkinsons0to1/AgentOS/internal/capd"
 	"github.com/parkinsons0to1/AgentOS/internal/ledger"
 	"github.com/parkinsons0to1/AgentOS/internal/session"
 )
@@ -27,6 +28,8 @@ func Handler(stateRoot string) http.Handler {
 	mux.HandleFunc("GET /api/sessions", d.listSessions)
 	mux.HandleFunc("GET /api/sessions/{id}/ledger", d.readLedger)
 	mux.HandleFunc("POST /api/sessions/{id}/kill", d.killSession)
+	mux.HandleFunc("GET /api/sessions/{id}/escalations", d.listEscalations)
+	mux.HandleFunc("POST /api/sessions/{id}/escalations/{host}", d.decideEscalation)
 	return mux
 }
 
@@ -135,6 +138,53 @@ func (d *dash) killSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"killed": m.ID, "pid": m.PID})
+}
+
+func (d *dash) listEscalations(w http.ResponseWriter, r *http.Request) {
+	dir, ok := d.sessionDir(r.PathValue("id"))
+	if !ok {
+		httpError(w, http.StatusBadRequest, "bad session id")
+		return
+	}
+	escalations, err := capd.ListEscalations(dir)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if escalations == nil {
+		escalations = []*capd.Escalation{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"escalations": escalations})
+}
+
+// decideEscalation approves or denies a pending capability request:
+// POST /api/sessions/{id}/escalations/{host} with {"approve": true|false}.
+// The decision is ledgered so the audit trail shows the human in the loop.
+func (d *dash) decideEscalation(w http.ResponseWriter, r *http.Request) {
+	dir, ok := d.sessionDir(r.PathValue("id"))
+	if !ok {
+		httpError(w, http.StatusBadRequest, "bad session id")
+		return
+	}
+	var body struct {
+		Approve *bool `json:"approve"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Approve == nil {
+		httpError(w, http.StatusBadRequest, `body must be {"approve": true|false}`)
+		return
+	}
+	e, err := capd.Decide(dir, r.PathValue("host"), *body.Approve)
+	if err != nil {
+		httpError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if led, lerr := ledger.Open(dir, r.PathValue("id")); lerr == nil {
+		led.Emit("capability."+e.Status, map[string]any{
+			"host": e.Host, "reason": e.Reason, "decided_by": "viewport",
+		})
+		led.Close()
+	}
+	writeJSON(w, http.StatusOK, e)
 }
 
 func (d *dash) index(w http.ResponseWriter, r *http.Request) {

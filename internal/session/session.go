@@ -63,6 +63,7 @@ func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRo
 	}
 
 	gw := capd.NewGateway(sess, secrets, led, bus)
+	gw.EscalationDir = dir
 	gwURL, err := gw.Start()
 	if err != nil {
 		return nil, err

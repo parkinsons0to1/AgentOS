@@ -26,6 +26,11 @@ const indexHTML = `<!doctype html>
   .ev .ty { color: #d2a8ff; margin-right: 8px; }
   .ev.denied .ty, .ev.exceeded .ty { color: #f85149; }
   .empty { color: #8b949e; padding: 24px; }
+  .esc { background: #bb800926; border: 1px solid #bb800966; border-radius: 6px; padding: 8px 12px; margin: 8px 0; }
+  .esc .host { color: #d29922; }
+  .esc button { font: inherit; font-size: 11px; border-radius: 5px; cursor: pointer; padding: 1px 10px; margin-left: 8px; }
+  .esc .ok { background: #23863633; color: #3fb950; border: 1px solid #3fb95066; }
+  .esc .no { background: #da36331a; color: #f85149; border: 1px solid #f8514966; }
 </style>
 <body>
 <aside>
@@ -33,6 +38,7 @@ const indexHTML = `<!doctype html>
   <div id="list"><div class="empty">loading…</div></div>
 </aside>
 <main>
+  <div id="approvals"></div>
   <div id="ledger"><div class="empty">select a session</div></div>
 </main>
 <script>
@@ -65,7 +71,31 @@ async function refreshList() {
 function select(id) {
   current = id; offset = 0;
   document.getElementById('ledger').innerHTML = '';
-  refreshList(); tail();
+  refreshList(); tail(); refreshApprovals();
+}
+
+async function refreshApprovals() {
+  const pane = document.getElementById('approvals');
+  if (!current) { pane.innerHTML = ''; return; }
+  const res = await fetch('api/sessions/' + current + '/escalations');
+  if (!res.ok) return;
+  const { escalations } = await res.json();
+  pane.innerHTML = '';
+  for (const e of escalations.filter(e => e.status === 'pending')) {
+    const div = document.createElement('div');
+    div.className = 'esc';
+    div.innerHTML = 'capability request: egress to <span class="host">' + e.host +
+      '</span> — "' + (e.reason || 'no reason given') + '"' +
+      '<button class="ok">approve</button><button class="no">deny</button>';
+    const decide = (approve) => async () => {
+      await fetch('api/sessions/' + current + '/escalations/' + e.host, {
+        method: 'POST', body: JSON.stringify({ approve }) });
+      refreshApprovals();
+    };
+    div.querySelector('.ok').onclick = decide(true);
+    div.querySelector('.no').onclick = decide(false);
+    pane.appendChild(div);
+  }
 }
 
 async function tail() {
@@ -89,5 +119,6 @@ async function tail() {
 refreshList();
 setInterval(refreshList, 3000);
 setInterval(tail, 1500);
+setInterval(refreshApprovals, 2000);
 </script>
 </body>`

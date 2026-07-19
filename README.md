@@ -72,7 +72,17 @@ Install a package (CLIs + MCP servers + skills in one bundle) and use it:
 Watch and control sessions from the human viewport:
 
 ```bash
-./agentd dash        # http://127.0.0.1:7420 — session list, ledger tail, kill switch
+./agentd dash        # http://127.0.0.1:7420 — session list, ledger tail,
+                     # capability approval queue, kill switch
+```
+
+Agents can ask for capabilities they weren't granted — the human decides:
+
+```bash
+# inside a session: denied host? request it with a reason, then retry
+curl -X POST $AGENTOS_GATEWAY/escalate -d '{"host":"api.stripe.com","reason":"need invoice data"}'
+# the request appears in the viewport; on approval the retry succeeds
+# (egress only — credential injection always requires the operator's spec)
 ```
 
 Run the tests with `go test ./...`.
