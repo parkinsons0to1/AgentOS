@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/parkinsons0to1/AgentOS/internal/apkg"
 	"github.com/parkinsons0to1/AgentOS/internal/capd"
 	"github.com/parkinsons0to1/AgentOS/internal/ledger"
 	"github.com/parkinsons0to1/AgentOS/internal/spec"
@@ -27,8 +28,20 @@ type Result struct {
 	Dir       string
 }
 
-// Run executes the session to completion.
-func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRoot string) (*Result, error) {
+// Run executes the session to completion. pkgRoot is the package store used
+// to resolve sess.Packages; it may be empty when the spec references none.
+func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRoot, pkgRoot string) (*Result, error) {
+	var binDirs []string
+	if len(sess.Packages) > 0 {
+		pkgs, err := apkg.Resolve(pkgRoot, sess.Packages)
+		if err != nil {
+			return nil, err
+		}
+		if binDirs, err = apkg.Apply(sess, pkgs); err != nil {
+			return nil, err
+		}
+	}
+
 	id := fmt.Sprintf("%s-%d", sess.Name, time.Now().Unix())
 	dir := filepath.Join(stateRoot, id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -61,6 +74,7 @@ func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRo
 
 	led.Emit("session.start", map[string]any{
 		"spec": sess.Name, "gateway": gwURL, "command": sess.Runtime.Command,
+		"packages": sess.Packages, "grants": grantHosts(sess),
 	})
 
 	runCtx := ctx
@@ -78,7 +92,7 @@ func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRo
 		}
 		cmd.Dir = sess.Workspace
 	}
-	cmd.Env = sessionEnv(sess, gwURL, manifestPath)
+	cmd.Env = sessionEnv(sess, gwURL, manifestPath, binDirs)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -116,7 +130,11 @@ func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRo
 // inherited: leaking the supervisor's env (which may hold operator secrets)
 // into the session would defeat the broker. Only spec-declared vars plus the
 // AgentOS contract vars pass through, with PATH/HOME kept for usability.
-func sessionEnv(sess *spec.Session, gwURL, manifestPath string) []string {
+func sessionEnv(sess *spec.Session, gwURL, manifestPath string, binDirs []string) []string {
+	path := os.Getenv("PATH")
+	if len(binDirs) > 0 {
+		path = strings.Join(binDirs, ":") + ":" + path
+	}
 	env := []string{
 		"AGENTOS=1",
 		"AGENTOS_SESSION=" + sess.Name,
@@ -130,13 +148,21 @@ func sessionEnv(sess *spec.Session, gwURL, manifestPath string) []string {
 		"https_proxy=" + gwURL,
 		"NO_PROXY=127.0.0.1,localhost",
 		"no_proxy=127.0.0.1,localhost",
-		"PATH=" + os.Getenv("PATH"),
+		"PATH=" + path,
 		"HOME=" + os.Getenv("HOME"),
 	}
 	for k, v := range sess.Env {
 		env = append(env, k+"="+v)
 	}
 	return env
+}
+
+func grantHosts(sess *spec.Session) []string {
+	hosts := make([]string, 0, len(sess.Egress))
+	for _, g := range sess.Egress {
+		hosts = append(hosts, g.Host)
+	}
+	return hosts
 }
 
 // manifest renders the machine-readable "what can I do here" contract that
@@ -158,6 +184,15 @@ func manifest(sess *spec.Session, gwURL string) string {
 				auth = "credential injected"
 			}
 			fmt.Fprintf(&b, "- `%s` (%s)\n", g.Host, auth)
+		}
+	}
+	b.WriteString("\n## Packages\n\n")
+	if len(sess.Packages) == 0 {
+		b.WriteString("None installed into this session.\n")
+	} else {
+		b.WriteString("Package CLIs are on PATH; their MCP servers and grants are listed below.\n\n")
+		for _, p := range sess.Packages {
+			fmt.Fprintf(&b, "- `%s`\n", p)
 		}
 	}
 	b.WriteString("\n## Tools (MCP)\n\n")

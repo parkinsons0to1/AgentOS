@@ -144,6 +144,7 @@ func (s *server) ensureStartedLocked() error {
 		return nil
 	}
 	cmd := exec.Command(s.spec.Command[0], s.spec.Command[1:]...)
+	cmd.Dir = s.spec.Dir
 	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME")}
 	for k, v := range s.spec.Env {
 		env = append(env, k+"="+v)

@@ -19,6 +19,7 @@ type Session struct {
 	Budgets    Budgets           `yaml:"budgets"`
 	Egress     []Grant           `yaml:"egress"`
 	MCPServers []MCPServer       `yaml:"mcp_servers"`
+	Packages   []string          `yaml:"packages"`
 	Env        map[string]string `yaml:"env"`
 }
 
@@ -42,6 +43,9 @@ type MCPServer struct {
 	Name    string            `yaml:"name"`
 	Command []string          `yaml:"command"`
 	Env     map[string]string `yaml:"env"`
+	// Dir is the working directory the server is spawned in. Packages set
+	// this to their install dir so relative paths in Command resolve.
+	Dir string `yaml:"dir"`
 }
 
 // Grant is a capability grant for one upstream host. The secret named here is
