@@ -64,9 +64,17 @@ Inside the session the agent finds:
 Install a package (CLIs + MCP servers + skills in one bundle) and use it:
 
 ```bash
-./agentd pkg install examples/packages/greeter   # prints the permission review
-# add `packages: [greeter]` to your session spec — its CLI lands on PATH,
-# its MCP server becomes callable at $AGENTOS_GATEWAY/tool/greeter/<tool>
+./agentd pkg install packages/github             # prints the permission review
+# add `packages: [github]` to your session spec — gh-api lands on PATH with
+# GitHub auth injected by the broker; the token never enters the session
+```
+
+Distribute packages through any OCI registry (ghcr.io, Docker Hub, registry:2):
+
+```bash
+export AGENTOS_REGISTRY_USER=you AGENTOS_REGISTRY_PASSWORD=your-pat
+./agentd pkg push github ghcr.io/you/agentos-pkg/github:0.1.0
+./agentd pkg pull ghcr.io/you/agentos-pkg/github:0.1.0   # on any other machine
 ```
 
 Watch and control sessions from the human viewport:

@@ -20,8 +20,8 @@ A bootable agent environment you can demo:
 - [x] **`apkg` manifest spec** (YAML) + installer: a package = CLIs + MCP servers + skills + declared egress capabilities. `agentd pkg install` prints the permission review; sessions reference packages by name and Apply merges their contents (grants deduped, MCP name collisions rejected). See `examples/packages/greeter`. OCI-artifact distribution still to come.
 - [x] **Human viewport v0**: `agentd dash` — session list with live status, poll-based ledger tail, kill switch (SIGTERM via meta.json PID). Approval queue still to come.
 - [x] **Approval queue**: sessions request ungranted egress via `POST $AGENTOS_GATEWAY/escalate` with a reason; pending requests surface in the viewport for approve/deny; approvals grant egress only (never credentials) and both sides of the exchange are ledgered (`capability.requested` / `capability.approved` / `capability.denied`).
-- [ ] Port 3–5 real packages (github-toolkit, browser, stripe, postgres) to prove the format.
-- [ ] **OCI distribution** for packages (push/pull apkg dirs as OCI artifacts).
+- [x] Real packages under `packages/`: **github** (gh-api CLI), **stripe** (stripe-api CLI), **web** (fetch) — all gateway-routed with broker-injected credentials, each with a skill; repo-integrity test keeps every shipped package installable.
+- [x] **OCI distribution**: `agentd pkg push/pull` speak the OCI registry v2 protocol directly (blob upload, manifests, ghcr-style bearer token exchange, digest verification, traversal-safe unpack). Works against ghcr.io/Docker Hub/registry:2; loopback registries use plain HTTP.
 
 ## v0.3 — "It's a platform"
 

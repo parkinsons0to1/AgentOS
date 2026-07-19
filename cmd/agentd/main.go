@@ -11,6 +11,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +22,7 @@ import (
 	"github.com/parkinsons0to1/AgentOS/internal/apkg"
 	"github.com/parkinsons0to1/AgentOS/internal/capd"
 	"github.com/parkinsons0to1/AgentOS/internal/dash"
+	"github.com/parkinsons0to1/AgentOS/internal/oci"
 	"github.com/parkinsons0to1/AgentOS/internal/session"
 	"github.com/parkinsons0to1/AgentOS/internal/spec"
 )
@@ -55,6 +57,11 @@ commands:
         run a session to completion
   pkg install <dir> [-store <dir>]    install a package into the store
   pkg list [-store <dir>]             list installed packages
+  pkg push <name> <ref> [-store <dir>]
+        push an installed package to an OCI registry
+        (ref like ghcr.io/OWNER/agentos-pkg/NAME:VERSION; credentials via
+         AGENTOS_REGISTRY_USER / AGENTOS_REGISTRY_PASSWORD)
+  pkg pull <ref> [-store <dir>]       pull a package from a registry and install it
   dash [-state <dir>] [-addr <host:port>]
         serve the human viewport (session list, ledger tail, kill switch)
   version                             print version`)
@@ -129,10 +136,96 @@ func pkgCmd(args []string) int {
 		}
 		return 0
 
+	case "push":
+		if len(rest) < 2 {
+			fmt.Fprintln(os.Stderr, "agentd pkg push: need <name> <ref>")
+			return 2
+		}
+		fs.Parse(rest[2:])
+		pkgs, err := apkg.Resolve(*store, []string{rest[0]})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agentd:", err)
+			return 1
+		}
+		ref, err := oci.ParseRef(rest[1])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agentd:", err)
+			return 1
+		}
+		client := registryClient(ref)
+		digest, err := client.Push(ref, pkgs[0].Dir, map[string]string{
+			"org.agentos.pkg.name":    pkgs[0].Name,
+			"org.agentos.pkg.version": pkgs[0].Version,
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agentd:", err)
+			return 1
+		}
+		fmt.Printf("pushed %s %s -> %s (%s)\n", pkgs[0].Name, pkgs[0].Version, rest[1], digest)
+		return 0
+
+	case "pull":
+		if len(rest) < 1 {
+			fmt.Fprintln(os.Stderr, "agentd pkg pull: need <ref>")
+			return 2
+		}
+		fs.Parse(rest[1:])
+		ref, err := oci.ParseRef(rest[0])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agentd:", err)
+			return 1
+		}
+		tmp, err := os.MkdirTemp("", "agentos-pull-*")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agentd:", err)
+			return 1
+		}
+		defer os.RemoveAll(tmp)
+		if err := registryClient(ref).Pull(ref, tmp); err != nil {
+			fmt.Fprintln(os.Stderr, "agentd:", err)
+			return 1
+		}
+		// Install validates the manifest and prints nothing itself; reuse the
+		// install path so pulled packages get the same permission review.
+		p, err := apkg.Install(tmp, *store)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agentd: pulled artifact is not a valid package:", err)
+			return 1
+		}
+		fmt.Printf("pulled %s %s -> %s\n", p.Name, p.Version, p.Dir)
+		for _, g := range p.Requires.Egress {
+			cred := "no credential"
+			if g.Secret != "" {
+				cred = "injects secret " + g.Secret
+			}
+			fmt.Printf("  grants egress: %s (%s)\n", g.Host, cred)
+		}
+		return 0
+
 	default:
 		usage()
 		return 2
 	}
+}
+
+// registryClient builds an OCI client from environment credentials:
+// AGENTOS_REGISTRY_USER/-_PASSWORD (for ghcr.io: GitHub username + PAT),
+// or AGENTOS_REGISTRY_TOKEN for a static bearer token. Loopback registries
+// get plain HTTP, matching the usual local-registry convention.
+func registryClient(ref oci.Ref) *oci.Client {
+	c := &oci.Client{
+		Username: os.Getenv("AGENTOS_REGISTRY_USER"),
+		Password: os.Getenv("AGENTOS_REGISTRY_PASSWORD"),
+		Token:    os.Getenv("AGENTOS_REGISTRY_TOKEN"),
+	}
+	host := ref.Registry
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		c.Scheme = "http"
+	}
+	return c
 }
 
 func defaultPkgRoot() string {
