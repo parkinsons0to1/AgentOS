@@ -55,8 +55,10 @@ chmod 600 secrets.yaml
 
 Inside the session the agent finds:
 
-- `$AGENTOS_MANIFEST` — a markdown contract listing its grants and budgets
+- `$AGENTOS_MANIFEST` — a markdown contract listing its grants, tools, and budgets
 - `$AGENTOS_GATEWAY` — the egress gateway; `curl $AGENTOS_GATEWAY/egress/api.github.com/zen` reaches GitHub **with credentials injected by the broker** — the key never enters the session
+- `HTTP(S)_PROXY` preset to the gateway, so even tools that know nothing about AgentOS get grant-checked egress
+- MCP tools via the gateway: `curl $AGENTOS_GATEWAY/tool/<server>` lists tools, `curl -X POST $AGENTOS_GATEWAY/tool/<server>/<tool> -d '{...}'` calls one — servers are declared in the spec and spawned lazily
 - a ledger at `~/.agentos/sessions/<id>/ledger.jsonl` recording everything
 
 Run the tests with `go test ./...`.

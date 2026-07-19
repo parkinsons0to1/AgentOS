@@ -9,15 +9,22 @@ workspace: ./workspace
 budgets:
   wall_clock_seconds: 300
   max_egress_requests: 50
+  max_tool_calls: 25
 egress:
   - host: api.github.com
     secret: github-token
     inject:
       header: Authorization
       format: "Bearer {secret}"
-  # Hosts can be granted without a credential too:
   - host: api.anthropic.com
     secret: anthropic-key
     inject:
       header: x-api-key
       format: "{secret}"
+# MCP servers are spawned lazily on first use and reached through the gateway:
+#   curl $AGENTOS_GATEWAY/tool                          # list servers
+#   curl $AGENTOS_GATEWAY/tool/<server>                 # list its tools
+#   curl -X POST $AGENTOS_GATEWAY/tool/<server>/<tool> -d '{...}'
+mcp_servers: []
+# - name: github
+#   command: ["npx", "-y", "@modelcontextprotocol/server-github"]

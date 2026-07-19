@@ -13,12 +13,13 @@ import (
 
 // Session is the top-level session spec, loaded from YAML.
 type Session struct {
-	Name      string            `yaml:"name"`
-	Runtime   Runtime           `yaml:"runtime"`
-	Workspace string            `yaml:"workspace"`
-	Budgets   Budgets           `yaml:"budgets"`
-	Egress    []Grant           `yaml:"egress"`
-	Env       map[string]string `yaml:"env"`
+	Name       string            `yaml:"name"`
+	Runtime    Runtime           `yaml:"runtime"`
+	Workspace  string            `yaml:"workspace"`
+	Budgets    Budgets           `yaml:"budgets"`
+	Egress     []Grant           `yaml:"egress"`
+	MCPServers []MCPServer       `yaml:"mcp_servers"`
+	Env        map[string]string `yaml:"env"`
 }
 
 // Runtime is the agent process to supervise (any harness: Claude Code,
@@ -32,6 +33,15 @@ type Runtime struct {
 type Budgets struct {
 	WallClockSeconds  int `yaml:"wall_clock_seconds"`
 	MaxEgressRequests int `yaml:"max_egress_requests"`
+	MaxToolCalls      int `yaml:"max_tool_calls"`
+}
+
+// MCPServer declares one MCP server available to the session via the toolbus.
+// Servers are spawned lazily on first use and speak JSON-RPC over stdio.
+type MCPServer struct {
+	Name    string            `yaml:"name"`
+	Command []string          `yaml:"command"`
+	Env     map[string]string `yaml:"env"`
 }
 
 // Grant is a capability grant for one upstream host. The secret named here is
@@ -84,6 +94,19 @@ func (s *Session) Validate() error {
 		}
 		if g.Secret != "" && (g.Inject == nil || g.Inject.Header == "") {
 			return fmt.Errorf("egress[%d]: secret %q needs inject.header", i, g.Secret)
+		}
+	}
+	seen := map[string]bool{}
+	for i, m := range s.MCPServers {
+		if m.Name == "" || strings.ContainsAny(m.Name, "/ ") {
+			return fmt.Errorf("mcp_servers[%d]: name must be non-empty with no slashes or spaces", i)
+		}
+		if seen[m.Name] {
+			return fmt.Errorf("mcp_servers[%d]: duplicate name %q", i, m.Name)
+		}
+		seen[m.Name] = true
+		if len(m.Command) == 0 {
+			return fmt.Errorf("mcp_servers[%d] (%s): command is required", i, m.Name)
 		}
 	}
 	return nil

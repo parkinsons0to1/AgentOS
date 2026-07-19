@@ -15,6 +15,7 @@ import (
 	"github.com/parkinsons0to1/AgentOS/internal/capd"
 	"github.com/parkinsons0to1/AgentOS/internal/ledger"
 	"github.com/parkinsons0to1/AgentOS/internal/spec"
+	"github.com/parkinsons0to1/AgentOS/internal/toolbus"
 )
 
 // Result summarizes a finished session.
@@ -40,7 +41,13 @@ func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRo
 	}
 	defer led.Close()
 
-	gw := capd.NewGateway(sess, secrets, led)
+	var bus *toolbus.Bus
+	if len(sess.MCPServers) > 0 {
+		bus = toolbus.New(sess.MCPServers, led)
+		defer bus.Shutdown()
+	}
+
+	gw := capd.NewGateway(sess, secrets, led, bus)
 	gwURL, err := gw.Start()
 	if err != nil {
 		return nil, err
@@ -115,6 +122,14 @@ func sessionEnv(sess *spec.Session, gwURL, manifestPath string) []string {
 		"AGENTOS_SESSION=" + sess.Name,
 		"AGENTOS_GATEWAY=" + gwURL,
 		"AGENTOS_MANIFEST=" + manifestPath,
+		// Unmodified tools route through the gateway's proxy mode, so grants
+		// apply to everything the session runs, not just gateway-aware code.
+		"HTTP_PROXY=" + gwURL,
+		"HTTPS_PROXY=" + gwURL,
+		"http_proxy=" + gwURL,
+		"https_proxy=" + gwURL,
+		"NO_PROXY=127.0.0.1,localhost",
+		"no_proxy=127.0.0.1,localhost",
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + os.Getenv("HOME"),
 	}
@@ -145,6 +160,16 @@ func manifest(sess *spec.Session, gwURL string) string {
 			fmt.Fprintf(&b, "- `%s` (%s)\n", g.Host, auth)
 		}
 	}
+	b.WriteString("\n## Tools (MCP)\n\n")
+	if len(sess.MCPServers) == 0 {
+		b.WriteString("No MCP servers declared.\n")
+	} else {
+		b.WriteString("List tools: `GET $AGENTOS_GATEWAY/tool/<server>` — ")
+		b.WriteString("call one: `POST $AGENTOS_GATEWAY/tool/<server>/<tool>` with JSON arguments.\n\n")
+		for _, m := range sess.MCPServers {
+			fmt.Fprintf(&b, "- `%s`\n", m.Name)
+		}
+	}
 	b.WriteString("\n## Budgets\n\n")
 	if sess.Budgets.WallClockSeconds > 0 {
 		fmt.Fprintf(&b, "- wall clock: %ds\n", sess.Budgets.WallClockSeconds)
@@ -153,7 +178,11 @@ func manifest(sess *spec.Session, gwURL string) string {
 		fmt.Fprintf(&b, "- egress requests: %d (check `$AGENTOS_GATEWAY/status`)\n",
 			sess.Budgets.MaxEgressRequests)
 	}
-	if sess.Budgets.WallClockSeconds == 0 && sess.Budgets.MaxEgressRequests == 0 {
+	if sess.Budgets.MaxToolCalls > 0 {
+		fmt.Fprintf(&b, "- tool calls: %d\n", sess.Budgets.MaxToolCalls)
+	}
+	if sess.Budgets.WallClockSeconds == 0 && sess.Budgets.MaxEgressRequests == 0 &&
+		sess.Budgets.MaxToolCalls == 0 {
 		b.WriteString("- none\n")
 	}
 	return b.String()

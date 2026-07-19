@@ -10,13 +10,13 @@ A bootable agent environment you can demo:
 - [x] **`ledger` v0**: JSONL append-only file per session (`internal/ledger`); session lifecycle, every egress request/denial, and budget violations captured.
 - [x] **`capd` v0**: secrets held by the broker (`internal/capd`); outbound traffic through a per-session egress gateway that checks grants and injects credentials upstream-side. Raw keys never appear in the session env. *This is the demo that sells the project.*
 - [x] **`MANIFEST.md` contract**: machine-readable "what can I do here" file generated into every session, path exported as `$AGENTOS_MANIFEST`.
+- [x] **HTTPS/CONNECT egress mode**: the gateway also acts as a standard HTTP proxy (`HTTP(S)_PROXY` is set in every session), so unmodified tools get grant-checked egress; plain-HTTP proxying injects credentials, CONNECT tunnels enforce grants only (opaque TLS).
 - [ ] **Base image**: minimal Linux (Alpine or NixOS for reproducibility) as an OCI image + a Firecracker rootfs build. No display stack whatsoever.
-- [ ] **HTTPS/CONNECT egress mode**: today the gateway uses path routing (`/egress/<host>/…`); add a transparent-proxy mode so unmodified tools work via `HTTPS_PROXY`.
 
 ## v0.2 — "It has apps"
 
+- [x] **`toolbus` v0**: MCP servers declared in the session spec, spawned lazily on first use (stdio JSON-RPC), reached over the gateway's `/tool` HTTP surface with a `max_tool_calls` budget; every call lands in the ledger. Deferred schema loading falls out of the design: agents list tool names first and fetch schemas per server on demand.
 - [ ] **`apkg` manifest spec** (TOML) + installer: a package = CLIs + MCP servers + skills + declared capabilities, shipped as an OCI artifact.
-- [ ] **`toolbus` v0**: MCP server registry with lazy startup and deferred schema loading; all calls pass capability checks and land in the ledger.
 - [ ] Port 3–5 real packages (github-toolkit, browser, stripe, postgres) to prove the format.
 - [ ] **Human viewport v0**: local web dashboard — session list, live ledger tail, approval queue, kill switch.
 

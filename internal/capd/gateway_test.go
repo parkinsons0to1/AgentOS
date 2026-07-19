@@ -22,7 +22,7 @@ func testGateway(t *testing.T, sess *spec.Session, secrets *Secrets) (base, dir 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { led.Close() })
-	gw := NewGateway(sess, secrets, led)
+	gw := NewGateway(sess, secrets, led, nil)
 	base, err = gw.Start()
 	if err != nil {
 		t.Fatal(err)
