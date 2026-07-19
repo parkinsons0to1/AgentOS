@@ -1,0 +1,29 @@
+#!/bin/sh
+# gh-api — call the GitHub REST API through the AgentOS gateway.
+#
+#   gh-api /user
+#   gh-api /repos/OWNER/REPO/issues
+#   gh-api -X POST /repos/OWNER/REPO/issues '{"title":"Bug"}'
+#
+# Authentication is injected by capd; this script never sees a token.
+set -eu
+
+METHOD="GET"
+if [ "${1:-}" = "-X" ]; then
+  METHOD="$2"
+  shift 2
+fi
+PATH_ARG="${1:?usage: gh-api [-X METHOD] /api/path [json-body]}"
+BODY="${2:-}"
+
+URL="${AGENTOS_GATEWAY:?not inside an AgentOS session}/egress/api.github.com${PATH_ARG}"
+
+if [ -n "$BODY" ]; then
+  exec curl -sS --fail-with-body -X "$METHOD" \
+    -H "Accept: application/vnd.github+json" \
+    -H "Content-Type: application/json" \
+    -d "$BODY" "$URL"
+else
+  exec curl -sS --fail-with-body -X "$METHOD" \
+    -H "Accept: application/vnd.github+json" "$URL"
+fi

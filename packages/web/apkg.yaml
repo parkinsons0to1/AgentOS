@@ -1,0 +1,8 @@
+name: web
+version: 0.1.0
+description: Fetch web pages through the session's transparent proxy, honoring egress grants.
+provides:
+  clis: [fetch]
+  skills: [web.md]
+requires:
+  egress: []

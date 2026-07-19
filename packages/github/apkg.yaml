@@ -1,0 +1,13 @@
+name: github
+version: 0.1.0
+description: GitHub API access through the capability broker — the token never enters the session.
+provides:
+  clis: [gh-api]
+  skills: [github.md]
+requires:
+  egress:
+    - host: api.github.com
+      secret: github-token
+      inject:
+        header: Authorization
+        format: "Bearer {secret}"

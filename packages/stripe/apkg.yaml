@@ -1,0 +1,13 @@
+name: stripe
+version: 0.1.0
+description: Stripe API access through the capability broker — the key never enters the session.
+provides:
+  clis: [stripe-api]
+  skills: [stripe.md]
+requires:
+  egress:
+    - host: api.stripe.com
+      secret: stripe-key
+      inject:
+        header: Authorization
+        format: "Bearer {secret}"

@@ -1,0 +1,24 @@
+#!/bin/sh
+# stripe-api — call the Stripe API through the AgentOS gateway.
+#
+#   stripe-api /v1/customers
+#   stripe-api -X POST /v1/customers "email=a@b.com&name=Ada"
+#
+# Stripe uses form-encoded bodies. Authentication is injected by capd.
+set -eu
+
+METHOD="GET"
+if [ "${1:-}" = "-X" ]; then
+  METHOD="$2"
+  shift 2
+fi
+PATH_ARG="${1:?usage: stripe-api [-X METHOD] /v1/path [form-body]}"
+BODY="${2:-}"
+
+URL="${AGENTOS_GATEWAY:?not inside an AgentOS session}/egress/api.stripe.com${PATH_ARG}"
+
+if [ -n "$BODY" ]; then
+  exec curl -sS --fail-with-body -X "$METHOD" -d "$BODY" "$URL"
+else
+  exec curl -sS --fail-with-body -X "$METHOD" "$URL"
+fi

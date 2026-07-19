@@ -1,0 +1,10 @@
+#!/bin/sh
+# fetch — retrieve a URL through the session's egress-controlled proxy.
+#
+#   fetch https://example.com/page
+#
+# The proxy enforces this session's grants: an ungranted host fails with a
+# structured error. Request access via POST $AGENTOS_GATEWAY/escalate.
+set -eu
+URL="${1:?usage: fetch <url>}"
+exec curl -sSL --fail-with-body --max-time 60 "$URL"
