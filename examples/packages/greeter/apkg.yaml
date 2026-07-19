@@ -1,0 +1,11 @@
+name: greeter
+version: 1.0.0
+description: Example package — a CLI, an MCP server, and a skill in one bundle.
+provides:
+  clis: [hello]
+  skills: [greeting.md]
+  mcp_servers:
+    - name: greeter
+      command: ["python3", "server.py"]
+requires:
+  egress: []

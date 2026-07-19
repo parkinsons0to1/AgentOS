@@ -1,0 +1,4 @@
+#!/bin/sh
+# Example package CLI: available on PATH inside any session that lists
+# "greeter" in its packages.
+echo "hello from the greeter package (session: ${AGENTOS_SESSION:-unknown})"
