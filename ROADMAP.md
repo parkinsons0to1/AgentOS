@@ -11,7 +11,8 @@ A bootable agent environment you can demo:
 - [x] **`capd` v0**: secrets held by the broker (`internal/capd`); outbound traffic through a per-session egress gateway that checks grants and injects credentials upstream-side. Raw keys never appear in the session env. *This is the demo that sells the project.*
 - [x] **`MANIFEST.md` contract**: machine-readable "what can I do here" file generated into every session, path exported as `$AGENTOS_MANIFEST`.
 - [x] **HTTPS/CONNECT egress mode**: the gateway also acts as a standard HTTP proxy (`HTTP(S)_PROXY` is set in every session), so unmodified tools get grant-checked egress; plain-HTTP proxying injects credentials, CONNECT tunnels enforce grants only (opaque TLS).
-- [ ] **Base image**: minimal Linux (Alpine or NixOS for reproducibility) as an OCI image + a Firecracker rootfs build. No display stack whatsoever.
+- [x] **Base image (OCI)**: Alpine-based headless image (`Dockerfile`) with `agentd` as the entrypoint; built and smoke-tested in CI. No display stack whatsoever.
+- [ ] **Firecracker rootfs build** for microVM isolation (the container image is the weaker-isolation dev profile).
 
 ## v0.2 — "It has apps"
 
