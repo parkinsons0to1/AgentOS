@@ -1,1 +1,43 @@
 # AgentOS
+
+**An operating system distribution built for AI agents as the primary user — not humans.**
+
+## The Thesis
+
+Every mainstream OS assumes a human at the controls: pixels rendered for eyes, a mouse for hands, menus for memory. When an AI agent uses macOS or Windows today, it screenshots the screen, feeds pixels through a vision model, and emits synthetic mouse events — paying 2–5 seconds per step to do what a structured call could do in milliseconds. The agent is wearing a human costume to talk to a machine.
+
+AgentOS inverts the assumption. The agent is the first-class user. Its "display" is structured data. Its "input devices" are shells, APIs, and tool calls. The human gets a viewport *into* the system — a dashboard for observing and approving — but the human interface is the peripheral, not the core.
+
+## What AgentOS Is (and Isn't)
+
+- **It is not a new kernel.** Linux already speaks the agent's native language (files, processes, pipes, sockets). Writing a kernel would be rebuilding the one layer that already works.
+- **It is a distribution + userspace contract**, the way Android is to Linux: an opinionated stack that defines how agents boot, discover tools, get credentials, spend money, and get audited.
+- **It is a platform others build on** — the VS Code play. The extension points are open standards that already won: MCP servers as the driver model, CLIs as applications, OCI images as the packaging substrate.
+
+## The Stack at a Glance
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Human Viewport (web dashboard: observe / approve)  │
+├─────────────────────────────────────────────────────┤
+│  Agent Sessions (Claude Code, OpenClaw, custom…)    │
+├─────────────────────────────────────────────────────┤
+│  agentd        — init/session supervisor            │
+│  toolbus       — MCP registry & routing (the "IPC") │
+│  capd          — capability broker (secrets, spend) │
+│  apkg          — package manager for agent apps     │
+│  ledger        — structured audit log ("dmesg")     │
+├─────────────────────────────────────────────────────┤
+│  Stock Linux kernel, per-agent microVM isolation    │
+└─────────────────────────────────────────────────────┘
+```
+
+## Documents
+
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — full system design: components, capability model, package format, scheduling.
+- [`LANDSCAPE.md`](./LANDSCAPE.md) — prior art (AIOS, E2B, Daytona, Morph, OpenClaw, academic AgenticOS workshops) and where AgentOS is differentiated.
+- [`ROADMAP.md`](./ROADMAP.md) — MVP scoping: what to build first and what to deliberately reuse.
+
+## Status
+
+Architecture phase. No code yet — the design documents in this repo are the current deliverable.
