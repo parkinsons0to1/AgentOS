@@ -17,9 +17,11 @@ A bootable agent environment you can demo:
 ## v0.2 — "It has apps"
 
 - [x] **`toolbus` v0**: MCP servers declared in the session spec, spawned lazily on first use (stdio JSON-RPC), reached over the gateway's `/tool` HTTP surface with a `max_tool_calls` budget; every call lands in the ledger. Deferred schema loading falls out of the design: agents list tool names first and fetch schemas per server on demand.
-- [ ] **`apkg` manifest spec** (TOML) + installer: a package = CLIs + MCP servers + skills + declared capabilities, shipped as an OCI artifact.
+- [x] **`apkg` manifest spec** (YAML) + installer: a package = CLIs + MCP servers + skills + declared egress capabilities. `agentd pkg install` prints the permission review; sessions reference packages by name and Apply merges their contents (grants deduped, MCP name collisions rejected). See `examples/packages/greeter`. OCI-artifact distribution still to come.
+- [x] **Human viewport v0**: `agentd dash` — session list with live status, poll-based ledger tail, kill switch (SIGTERM via meta.json PID). Approval queue still to come.
 - [ ] Port 3–5 real packages (github-toolkit, browser, stripe, postgres) to prove the format.
-- [ ] **Human viewport v0**: local web dashboard — session list, live ledger tail, approval queue, kill switch.
+- [ ] **Approval queue**: capability escalation requests from sessions surfacing in the viewport.
+- [ ] **OCI distribution** for packages (push/pull apkg dirs as OCI artifacts).
 
 ## v0.3 — "It's a platform"
 

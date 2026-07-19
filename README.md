@@ -61,4 +61,18 @@ Inside the session the agent finds:
 - MCP tools via the gateway: `curl $AGENTOS_GATEWAY/tool/<server>` lists tools, `curl -X POST $AGENTOS_GATEWAY/tool/<server>/<tool> -d '{...}'` calls one — servers are declared in the spec and spawned lazily
 - a ledger at `~/.agentos/sessions/<id>/ledger.jsonl` recording everything
 
+Install a package (CLIs + MCP servers + skills in one bundle) and use it:
+
+```bash
+./agentd pkg install examples/packages/greeter   # prints the permission review
+# add `packages: [greeter]` to your session spec — its CLI lands on PATH,
+# its MCP server becomes callable at $AGENTOS_GATEWAY/tool/greeter/<tool>
+```
+
+Watch and control sessions from the human viewport:
+
+```bash
+./agentd dash        # http://127.0.0.1:7420 — session list, ledger tail, kill switch
+```
+
 Run the tests with `go test ./...`.

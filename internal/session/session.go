@@ -5,6 +5,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,9 +33,10 @@ type Result struct {
 // to resolve sess.Packages; it may be empty when the spec references none.
 func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRoot, pkgRoot string) (*Result, error) {
 	var binDirs []string
+	var pkgs []*apkg.Package
 	if len(sess.Packages) > 0 {
-		pkgs, err := apkg.Resolve(pkgRoot, sess.Packages)
-		if err != nil {
+		var err error
+		if pkgs, err = apkg.Resolve(pkgRoot, sess.Packages); err != nil {
 			return nil, err
 		}
 		if binDirs, err = apkg.Apply(sess, pkgs); err != nil {
@@ -68,7 +70,7 @@ func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRo
 	defer gw.Shutdown()
 
 	manifestPath := filepath.Join(dir, "MANIFEST.md")
-	if err := os.WriteFile(manifestPath, []byte(manifest(sess, gwURL)), 0o644); err != nil {
+	if err := os.WriteFile(manifestPath, []byte(manifest(sess, gwURL, pkgs)), 0o644); err != nil {
 		return nil, err
 	}
 
@@ -99,7 +101,14 @@ func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRo
 	cmd.WaitDelay = 5 * time.Second
 
 	start := time.Now()
-	runErr := cmd.Run()
+	runErr := cmd.Start()
+	if runErr == nil {
+		writeMeta(dir, Meta{
+			ID: id, Spec: sess.Name, PID: cmd.Process.Pid,
+			StartedAt: start.UTC(), Command: sess.Runtime.Command,
+		})
+		runErr = cmd.Wait()
+	}
 	res := &Result{
 		Duration:  time.Since(start),
 		SessionID: id,
@@ -123,7 +132,33 @@ func Run(ctx context.Context, sess *spec.Session, secrets *capd.Secrets, stateRo
 		"exit_code": res.ExitCode, "timed_out": res.TimedOut,
 		"duration_ms": res.Duration.Milliseconds(),
 	})
+	writeMeta(dir, Meta{
+		ID: id, Spec: sess.Name, PID: 0, // 0 = no longer running
+		StartedAt: start.UTC(), Command: sess.Runtime.Command,
+		EndedAt: time.Now().UTC(), ExitCode: &res.ExitCode, TimedOut: res.TimedOut,
+	})
 	return res, nil
+}
+
+// Meta is the session's meta.json: enough for tooling (the dashboard) to
+// show status and target the runtime process. PID 0 means finished.
+type Meta struct {
+	ID        string    `json:"id"`
+	Spec      string    `json:"spec"`
+	PID       int       `json:"pid"`
+	Command   []string  `json:"command"`
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at,omitzero"`
+	ExitCode  *int      `json:"exit_code,omitempty"`
+	TimedOut  bool      `json:"timed_out,omitempty"`
+}
+
+func writeMeta(dir string, m Meta) {
+	raw, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return
+	}
+	os.WriteFile(filepath.Join(dir, "meta.json"), raw, 0o644)
 }
 
 // sessionEnv builds the runtime's environment. The parent environment is NOT
@@ -168,7 +203,7 @@ func grantHosts(sess *spec.Session) []string {
 // manifest renders the machine-readable "what can I do here" contract that
 // every session finds at $AGENTOS_MANIFEST. Discoverability is a guarantee:
 // the agent never has to guess its grants or budgets.
-func manifest(sess *spec.Session, gwURL string) string {
+func manifest(sess *spec.Session, gwURL string, pkgs []*apkg.Package) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# AgentOS Session Manifest\n\n")
 	fmt.Fprintf(&b, "- session: `%s`\n- egress gateway: `%s`\n\n", sess.Name, gwURL)
@@ -187,12 +222,19 @@ func manifest(sess *spec.Session, gwURL string) string {
 		}
 	}
 	b.WriteString("\n## Packages\n\n")
-	if len(sess.Packages) == 0 {
+	if len(pkgs) == 0 {
 		b.WriteString("None installed into this session.\n")
 	} else {
 		b.WriteString("Package CLIs are on PATH; their MCP servers and grants are listed below.\n\n")
-		for _, p := range sess.Packages {
-			fmt.Fprintf(&b, "- `%s`\n", p)
+		for _, p := range pkgs {
+			fmt.Fprintf(&b, "- `%s` %s — %s\n", p.Name, p.Version, p.Description)
+			for _, c := range p.Provides.CLIs {
+				fmt.Fprintf(&b, "  - cli: `%s`\n", c)
+			}
+			for _, sk := range p.Provides.Skills {
+				fmt.Fprintf(&b, "  - skill: `%s` (read it before related tasks)\n",
+					filepath.Join(p.Dir, "skills", sk))
+			}
 		}
 	}
 	b.WriteString("\n## Tools (MCP)\n\n")

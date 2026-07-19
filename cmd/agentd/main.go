@@ -11,6 +11,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/parkinsons0to1/AgentOS/internal/apkg"
 	"github.com/parkinsons0to1/AgentOS/internal/capd"
+	"github.com/parkinsons0to1/AgentOS/internal/dash"
 	"github.com/parkinsons0to1/AgentOS/internal/session"
 	"github.com/parkinsons0to1/AgentOS/internal/spec"
 )
@@ -35,6 +37,8 @@ func main() {
 		os.Exit(runCmd(os.Args[2:]))
 	case "pkg":
 		os.Exit(pkgCmd(os.Args[2:]))
+	case "dash":
+		os.Exit(dashCmd(os.Args[2:]))
 	case "version":
 		fmt.Println("agentd", version)
 	default:
@@ -51,7 +55,23 @@ commands:
         run a session to completion
   pkg install <dir> [-store <dir>]    install a package into the store
   pkg list [-store <dir>]             list installed packages
+  dash [-state <dir>] [-addr <host:port>]
+        serve the human viewport (session list, ledger tail, kill switch)
   version                             print version`)
+}
+
+func dashCmd(args []string) int {
+	fs := flag.NewFlagSet("dash", flag.ExitOnError)
+	stateRoot := fs.String("state", defaultStateRoot(), "directory of session state and ledgers")
+	addr := fs.String("addr", "127.0.0.1:7420", "listen address")
+	fs.Parse(args)
+
+	fmt.Fprintf(os.Stderr, "agentd dash: viewport on http://%s (state: %s)\n", *addr, *stateRoot)
+	if err := http.ListenAndServe(*addr, dash.Handler(*stateRoot)); err != nil {
+		fmt.Fprintln(os.Stderr, "agentd:", err)
+		return 1
+	}
+	return 0
 }
 
 func pkgCmd(args []string) int {
