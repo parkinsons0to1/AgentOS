@@ -13,11 +13,11 @@ import (
 
 // Session is the top-level session spec, loaded from YAML.
 type Session struct {
-	Name      string     `yaml:"name"`
-	Runtime   Runtime    `yaml:"runtime"`
-	Workspace string     `yaml:"workspace"`
-	Budgets   Budgets    `yaml:"budgets"`
-	Egress    []Grant    `yaml:"egress"`
+	Name      string            `yaml:"name"`
+	Runtime   Runtime           `yaml:"runtime"`
+	Workspace string            `yaml:"workspace"`
+	Budgets   Budgets           `yaml:"budgets"`
+	Egress    []Grant           `yaml:"egress"`
 	Env       map[string]string `yaml:"env"`
 }
 
